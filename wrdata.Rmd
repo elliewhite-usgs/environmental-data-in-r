@@ -1,0 +1,501 @@
+---
+title: "Data Prep For ML"
+author: "Ellie White"
+date: "May 11th, 2017"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Contents   
+Citations
+1.0 CDEC Full Natural Flow Basin Boundaries -- Developed from NHDPlusV2  
+2.0 Climate, Temperature and Precipitation (Dynamic) -- PRISM  
+3.0 Hypsometry or Elevation -- SRTM 90  
+4.0 Soil Properties -- POLARIS  
+5.0 Land Cover -- CALVEG  
+6.0 Geology -- NRCS  
+7.0 Unimpaired Flows -- CDEC  
+  7.1 Month, Season and Year  
+8.0 Basin Characteristic Data -- GaugesII, USGS   
+  8.1 Flow Data -- GAUGES II, USGS  
+9.0 Flow Data -- CALVIN  
+COMING LATER (hopefully)!!!  
+10.0 Soil Type -- NLCD  
+11.0 Watershed Boundaries -- calwater  
+12.0 Land Use Land Cover -- LULC 
+13.0 Land Cover -- GAP Land Cover 3 National Vegetation Classification-Formation Land Use  
+14.0 GCM Downscaled Climate Data -- CEC 4th Assessment  
+Final Touches  
+
+# Useful Libraries  
+library(raster)         # for raster data manipulation  
+library(rgeos)          # for spatial data calculations  
+library(rgdal)          # for spatial data manipulation 
+library(dismo)          # for spatial data calculations
+library(geosphere)      # for spatial data calculations
+library(prism)          # for temp and precip web scraping  
+library(sharpshootR)    # for CDEC web scraping  
+library(waterData)      # for USGS GUAGESII data
+library(reshape2)       # for reshaping data  
+
+```{r, include=FALSE}
+library(knitr)
+library(formatR)
+opts_chunk$set(
+  fig.width  = 7.5,
+  fig.height = 7.5,
+  collapse   = TRUE,
+  tidy       = FALSE
+)
+```
+
+# Citations
+```{r citations, include=FALSE}
+# cite R 
+toBibtex(citation())
+
+# list the packages you have been using 
+search()
+
+# put the packages you want to cite below. We will be using these: 
+citethese <- c("sp", "raster", "rgdal", "prism", "sharpshootR", "waterData", "reshape2")
+for(i in seq_along(citethese)){
+  x <- citation(citethese[i])
+  print(toBibtex(x)) # in bibtex style
+}
+
+# use install.packages("YOUR PACKAGE NAME") to install the packages you don't have
+```
+
+# Data Gathering
+## 1.0 CDEC Full Natural Flow Basin Boundaries -- Developed from NHDPlusV2
+What: spatial points of interest, basin boundaries
+Type: .csv, .shp
+Time Resolution: static
+Modifications: change projections if needed 
+Notes: I developed these boundaries from looking at the flow direction and joining smaller basins in ArcMap. There will be mistakes and anomolies. Use with discretion. 
+
+```{r basin_data}
+library(raster)
+# Basin locations 
+sptdf <- read.csv("somedata/CDEC_FNF/Outlet_Locations.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1")
+
+# Change the dataframe to a SpatialPointsDataFrame
+coordinates(sptdf) <- ~LONGITUDE + LATITUDE
+proj4string(sptdf) <- CRS('+proj=longlat +datum=WGS84')
+
+library(rgdal)
+basins <- shapefile('somedata/CDEC_FNF/Catchments.shp')
+
+# projections used for California
+TA <- crs("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=km +ellps=GRS80")
+Albers <- crs("+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
+
+# transform to all to Albers
+sptdf <- spTransform(sptdf, Albers)
+basins <- spTransform(basins, Albers)
+```
+    
+## 2.0 Climate (Dynamic) -- PRISM
+What:  
+* tmean	Mean temperature, mean(monthly min, monthly max)  
+* tmax	Maximum temperature in degrees celcius  
+* tmin	Minimum temperature in degrees celcius  
+* ppt	Total precipitation (Rain and snow) in millimeters  
+* vpdmin	Daily minimum vapor pressure deficit [averaged over all days in the month - normal data only]  
+* vpdmax	Daily maximum vapor pressure deficit [averaged over all days in the month - normal data only]  
+Type (extension): .bil (binary data), gridded rasters for the continental US at 4km resolution  
+Time Resolution: 3 different scales available: daily, monthly and 30 year normals. Data is available from 1891 until 2014, however you have to download all data for years prior to 1981. 
+Modifications: you may need to aggregate by basin  
+```{r prism_data}
+# # the folders "PRISM_TMP" and "PRISM_PPT" are empty, but won't be after the following lines of code, this may take a while so I have commented it out for now
+# 
+# library(prism)
+# # set the path to download temperature data
+# options(prism.path = "somedata/PRISM_TMP")
+# 
+# # comment this line when you are done, so you don't accidentally download again
+# get_prism_monthlys(type = "tmean", year = 1981:2014, mon = 1:12, keepZip = FALSE)
+# 
+# # create a stack of prism files
+# prism_tmp <- prism_stack(ls_prism_data()[, 1])
+# 
+# # make a new folder under Some Data named "PRISM_PPT". This is where the precipitation data will get downoaded
+# # set the path to download precipitation data
+# options(prism.path = "somedata/PRISM_PPT")
+# 
+# # comment this line when you are done, so you don't accidentally download again
+# get_prism_monthlys(type = "ppt", year = 1981:2014, mon = 1:12, keepZip = FALSE)
+# 
+# # create a stack of prism files
+# prism_ppt <- prism_stack(ls_prism_data()[,1])
+```
+
+```{r prism_aggregation}
+# # if you need to aggregate temp and precip rasters by basin boundaries, this may take a while if you have a lot of rasters and a lot of basin boundaries, so I have commented it out for now
+# basins_tmp <- extract(prism_tmp, basins, fun=mean,  weights=FALSE, small=TRUE)
+# basins_ppt <- extract(prism_ppt, basins, fun=mean,  weights=FALSE, small=TRUE)
+# 
+# # plot to check
+# plot(basins_tmp[, 1])
+# plot(basins_ppt[, 1])
+# 
+# # write to a csv file
+# write.csv(basins_tmp, file="somedata/CDEC_FNF/basins_PRISM_TMP.csv", row.names = FALSE)
+# write.csv(basins_ppt, file="somedata/CDEC_FNF/basins_PRISM_PPT.csv", row.names = FALSE)
+# 
+# # read in and comment the lines above so you don't accidentally run them again
+# basins@data$TMP <- read.csv("somedata/CDEC_FNF/basins_PRISM_TMP.csv")
+# basins@data$PPT <- read.csv("somedata/CDEC_FNF/basins_PRISM_PPT.csv")
+# 
+# # fix the column names as actual dates
+# strspl <- unlist(strsplit(colnames(basins@data$TMP), split="_"))
+# date_vector <- strspl[seq(5,length(strspl),6)]
+# date_formatted <- paste(substr(date_vector,1,4),"-",substr(date_vector,5,6),"-01",sep="")
+# 
+# # since the precip and temp data are for the same time series change the column names on both dataframes
+# colnames(basins@data$TMP) <- colnames(basins@data$PPT) <- date_formatted
+```
+
+## 3.0 Hypsometry or Elevation -- SRTM 90m
+What: altitude or elevation data from the SRTM 90m model
+Projection: longlat
+Datum: WGS84
+Type (extension): .grd 
+Time Resolution: static  
+Spacial Resolution: 90m (at the equator or 3 arc-seconds). The vertical error of the DEMs is reported to be less than 16 meters. 
+Note: this data set is split for USA
+Units: meters
+Modifications: may need to aggregate by basin
+```{r hypsometric}
+## uncomment to download
+# elev <- getData('alt', country='USA', mask=TRUE) 
+
+# if the code above is broken use the data in the folder
+elev <- raster("somedata/SRTM_Altitude/USA1_msk_alt.grd")
+```
+
+## 4.0 Soil Properties -- POLARIS
+What: SSURGO processed soil data, 3 arcsec (~100 m)
+Projection: Lambert Conformal Conic 
+Datum: NAD83
+Url: http://stream.princeton.edu/POLARIS/PROPERTIES/3arcsec/
+Date retrieved: 05/11/17
+Type (extension): .tif 
+Time resolution: static  
+Spacial resolution: 3 arc-second (~100 meters)
+Units: meters
+Modifications: may need to aggregate by basin
+Credit: Nate Chaney
+```{r polaris}
+# # download the data from the link above and put it in the POLARIS folder
+# ksat <- raster('somedata/POLARIS/ksat_mean_0_5.tif') # ksat - saturated hydraulic conductivity, cm/hr
+# silt <- raster('somedata/POLARIS/silt_mean_0_5.tif') # silt - silt percentage, %
+# sand <- raster('somedata/POLARIS/sand_mean_0_5.tif') # sand - sand percentage, %
+# clay <- raster('somedata/POLARIS/clay_mean_0_5.tif') # clay - clay percentage, %
+# slope <- raster('somedata/POLARIS/slope_mean.tif') # ??? not explained
+# awc <- raster('somedata/POLARIS/awc_mean_0_5.tif') #awc - available water content, m3/m3
+# lambda_poresize <- raster('somedata/POLARIS/lambda_mean_0_5.tif') # lambda - pore size distribution index (brooks-corey), N/A
+# n_poresize <- raster('somedata/POLARIS/n_mean_0_5.tif') # n - measure of the pore size distribution (van genuchten), N/A
+# alpha_poresize <- raster('somedata/POLARIS/alpha_mean_0_5.tif') # alpha - scale parameter inversely proportional to mean pore diameter (van genuchten), cm-1
+# resdt <- raster('somedata/POLARIS/resdt_mean.tif') # resdt - depth to restriction layer, cm
+```
+
+## 5.0 Land Cover -- CALVEG
+What: Vegetation Cover for California. For classification of existing vegetation, a set of U.S. Forest Service standards and procedures has been established at the national and regional levels. The R5 CALVEG classification system conforms to the upper levels of the National Vegetation Classification Standard (USNVC) hierarchy as it currently exists. The USNVC sets guidelines for all federal agencies involved in this work. Lowest (floristic) levels of this hierarchy are currently being developed and have not yet been finalized for their applicability to California.
+projection: longlat 
+Datum: NAD83
+Type (extension): .tif (Processing and joining the different layers was done in ArcMap)
+Date Retrieved: 11/10/2017
+Url: https://www.fs.usda.gov/detail/r5/landmanagement/resourcemanagement/?cid=stelprdb5347192
+Time resolution: static  
+Spacial resolution: 0.02, 0.02 
+Units: none, unprojected
+Modifications: need to aggregate by basin
+```{r calveg}
+calveg <- raster('somedata/CALVEG/calveg_raster.tif')
+
+# find the percentage of each covertype overlayed by each basin
+# extract raster values to polygons                             
+calveg_extracted <- extract(calveg, basins)
+
+# cet class counts for each polygon
+calveg_extracted_counts <- lapply(calveg_extracted, table)
+
+# calculate class percentages for each polygon
+calveg_extracted_pct <- lapply(calveg_extracted_counts, FUN=function(x){x/sum(x)})
+
+# check if it adds to 1
+sum(calveg_extracted_pct[[74]]) 
+
+# create a data.frame where missing classes are NA
+class_df <- as.data.frame(t(sapply(calveg_extracted_pct,'[',1:length(unique(calveg)))))  
+
+# replace NA's with 0 and add names
+class_df[is.na(class_df)] <- 0   
+names(class_df) <- paste("class", names(class_df),sep="")
+names(class_df) <- calveg@data@attributes[[1]]$COVERTYPE
+
+# now to percent vegetated, this includes all columns except for URB, BAR, WAT
+# URB: urban
+# BAR: baren
+# SHB: shrub
+# CON: conifers 
+# HDW: hardwoods
+# WAT: water
+# MIX: mix
+# AGR: agriculture
+
+class_df$VEGETATED <- apply(class_df[, c(3:6, 8:9)], 1, sum)
+basins@data$VEGETATED <- class_df$VEGETATED
+
+write.csv(basins@data$VEGETATED, 'somedata/CDEC_FNF/basins_Vegetated.csv')
+```
+
+## 6.0 Geology -- NRCS
+What: Age, Rocktype1 and Rocktype 2
+projection: longlat
+Datum: NAD83
+Type (extension): .shp
+Time resolution: static  
+Units: none, unprojected
+Modifications: need to aggregate by basin
+```{r geo_data}
+# Geology (Reed and Bush 2005)
+# percent of basin each of nine geological classes
+# dominant geologic class in basin
+nrcsgeo_ca <- shapefile('somedata/NRCS_GEOLOGY/geology_a_ca.shp')
+
+# again make some transformations 
+nrcsgeo_ca <- spTransform(nrcsgeo_ca, Albers)
+```
+
+## 7.0 Unimpaired Flows -- CDEC 
+What: CDEC monthly FNF (full natural flow) in AF, upon further investigation these values are actually unimpared flows
+Type (extension): dataframe in r  
+Time resolution: monthly  
+Spacial resolution: for all CDEC gauges in CA (consisting of some DWR, USBR, PGE, ... gages) 
+Modifications: none
+```{r unimpaired_flow}
+# # read stations, coordinates are NAD-27, WGS-84 datum
+# cdec_fnf_sta <- read.csv("somedata/CDEC/Outlet_Locations.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1")
+# id_list_cdec <- cdec_fnf_sta$CDEC_ID
+# 
+# library(sharpshootR)
+# # sensor for "FLOW, FULL NATURAL"= 65, units in AF
+# 
+# mflowlist_cdec <- list()
+# for (id in id_list_cdec){
+#   mflowlist_cdec[[id]] <- CDECquery(id, sensor=65, interval="M", start="1982-01-01", end="2014-12-31")
+# }
+# 
+# # if you get an error in the command above uncomment this for loop and run this
+# # for (id in id_list_cdec){
+# #   mflowtry_cdec <- try(CDECquery(id, sensor=65, interval="M", start="1982-01-01", end="2014-12-31"), silent=FALSE)
+# #     if ('try-error' %in% class(mflowtry_cdec)) next
+# #     else mflowlist_cdec[[id]] <- mflowtry_cdec
+# # }
+# 
+# # coerce list into a data frame
+# mflowdf_cdec <- do.call(rbind.data.frame, mflowlist_cdec)
+# 
+# # the name is written in with a "___.#", get rid of the number
+# mflowdf_cdec$CDEC_ID <- substring(rownames(mflowdf_cdec), 1, 3)
+# 
+# # write to a csv file
+# write.csv(mflowdf_cdec, file="Data/CDEC/full_Natural_Flows.csv", row.names=FALSE)
+
+# This tool may not be working anymore, as of 2/10/2019 CDEC has removed some of it's full natural flow stations offline and is no longer accessible, look under "somedata/CDEC_FNF/full_Natural_Flows.csv"" to find the data last accessed 12/12/2016
+
+cdec_fnf <- read.csv("somedata/CDEC_FNF/full_Natural_Flows.csv")
+cdec_fnf <- na.omit(cdec_fnf)
+cdec_fnf <- cdec_fnf[,-c(2:3)]
+```
+
+### 7.1 Month & Season & Year
+```{r month}
+cdec_fnf$MONTH <- month.abb[as.integer(substring(cdec_fnf$datetime, 6, 7))]
+cdec_fnf$MONTH_ORDINAL <- abs(6-as.integer(substring(cdec_fnf$datetime, 6, 7))) 
+
+# make a season finding function
+getseason <- function(dates) {
+    WS <- as.Date("2012-12-15", format = "%Y-%m-%d") # Winter Solstice
+    SE <- as.Date("2012-3-15",  format = "%Y-%m-%d") # Spring Equinox
+    SS <- as.Date("2012-6-15",  format = "%Y-%m-%d") # Summer Solstice
+    FE <- as.Date("2012-9-15",  format = "%Y-%m-%d") # Fall Equinox
+
+    # Convert dates from any year to 2012 dates
+    d <- as.Date(strftime(dates, format="2012-%m-%d"))
+
+    ifelse (d >= WS | d < SE, "Winter",
+      ifelse (d >= SE & d < SS, "Spring",
+        ifelse (d >= SS & d < FE, "Summer", "Fall")))
+}
+cdec_fnf$SEASON <- as.factor(getseason(cdec_fnf$datetime))
+cdec_fnf$YEAR <- as.numeric(substring(cdec_fnf$datetime, 1, 4))
+```
+
+## 8 Basin Characteristic Data -- GaugesII, USGS 
+What: gauges II data for USGS gauges  
+Type (extension): excel files  
+Time resolution: annual  
+Spacial resolution: for all USGS gauges in CA  
+Modifications: download flows seperately, need to map to CALVIN Rim Inflow locations  
+
+```{r Predictor_Data_GaugesII}
+gage_locations <- shapefile("somedata/USGS/GAGESII/gagesII_9322_sept30_2011.shp")
+plot(gage_locations)
+
+gage_ca <- gage_locations[(gage_locations$STATE=="CA"), ]
+
+gage_boundary <- shapefile("somedata/USGS/GAGESII/boundaries/bas_ref_all.shp")
+
+# import all predictor data
+file_list <- list.files("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/")
+
+for (file in file_list){
+  # if the merged dataset doesn't exist, create it
+  if (!exists("gauge_pd")){
+    gauge_pd <- read.csv(paste0("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/",file), header=TRUE, sep=",")
+  }
+  # if the merged dataset does exist, append to it
+  if (exists("gauge_pd")){
+    temp_dataset <-read.csv(paste0("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/",file), header=TRUE, sep=",")
+    gauge_pd<-merge(gauge_pd, temp_dataset)
+    rm(temp_dataset)
+  }
+}
+
+# only keep the gauges that are located in CA 
+gauge_pd_ca <- gauge_pd[(gauge_pd$STATE=="CA"), ]
+
+# leading zeros in staid column were deleted! only the first staid had this problem! note: this coerces all the staid column to strings.
+gauge_pd_ca$STAID[1] <- "09423350"
+
+# map to other basins based on proximity if needed 
+```
+
+### 8.1 Flow Data -- GAUGESII, USGS
+What: USGS Daily Streamflow  
+Type (extension): dataframe in r  
+Time resolution: daily  
+Spacial resolution: for all USGS gauges in CA  
+Modifications: may need to aggregate to monthly  
+               
+```{r USGS_Flow_Data}
+# out of 810 California gages
+# !!!! 298 complete records for 1990-2009 (20 years)
+# !!!! 120 complete records for 1950-2009 (60 years)
+# !!!! 2 complete records for 1900-2009 (110 years)
+
+# retrieve daily streamflow data from the USGS Daily Values Site Web Service
+## code = 00060, is discharge in cubic feet per second
+## stat = 00003, is the mean daily value
+## edate = as.Date(Sys.Date(), format = "%Y-%m-%d"), for record up to now.
+library(waterData)
+
+# list of your guages of interest here
+staid_list <- gauge_pd_ca$STAID
+
+mflowlist <- list()
+for (staid in staid_list){
+  mflowtry <- try(importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"), silent=FALSE)
+    if ('try-error' %in% class(mflowtry)) next
+    else mflowlist[[staid]] <- mflowtry
+  print(staid)
+}
+
+# now coerce into a form you can use
+# mflowdf <- as.data.frame.list(mflowlist)
+
+# try lapply instead of a loop, it's r best practice
+# mflow <- lapply(staid_list, importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"))  
+```
+
+## 9 Flow Data -- CALVIN
+What: Monthly Streamflow Simulation Results from CALSIMII and other methods
+Type (extension): .csv  
+Time resolution: monthly  
+Spacial resolution: for 46 Rim Inflow locations  
+Modifications: none
+
+```{r CALVIN_Flow_Data}
+# read in rim inflows as it is: wide format
+ri_wide <- read.csv("somedata/CALVIN/Index_Basins_Flows.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1") 
+
+# change to long format
+library(reshape2)
+riminflows <- melt(ri_wide, id.vars = c("RIVER_LOCATION", "INDEX_BASIN_NAME", "HOBBES_NAME", "LATITUDE", "LONGITUDE") , measure.vars = 6:989, variable.name = "DATE", value.name = "FLOW") 
+head(riminflows)
+
+# dates will need cleaning up here
+```
+
+# COMING LATER (hopefully)!!! 
+
+## 10.0 Soil Type -- NLCD  
+What: National Land Cover Database 2011 (NLCD 2011). 16 classes, modified from the Anderson Land Cover Classification System. NLCD 2011 is based primarily on a decision-tree classification of circa 2011 Landsat satellite data.
+Type (extension): 
+Time resolution: 
+Spacial resolution: 30 meters
+Modifications: aggregate to basins
+
+## 11.0 Watershed Boundaries -- calwater  
+What: CalWater 2.2.1 Watershed Boundaries. Meant to standardize the boundary delineation, coding, and naming of California watersheds by government agencies. Calwater also cross-references watershed codes implemented by the California Department of Water Resources (DWR), the California State Water Resources Control Board (SWRCB) and Regional Water Quality Control Boards (RWQCB), as well as Hydrologic Unit Codes (HUC) published by the U.S. Geological Survey (USGS) for California and the nation.   
+Type (extension): .gdb = Geodatabase   
+Time resolution:   
+Spacial resolution: statewide  
+Modifications: none  
+Projection: California Teale Albers - NAD83  
+
+## 12.0 Land Use Land Cover -- LULC  
+What: Land Use Land Cover, historical land use and land cover classification data that was based primarily on the manual interpretation of 1970's and 1980's aerial photography. Secondary sources included land use maps and surveys. There are 21 possible categories of cover type.  
+Type (extension): available in GIRAS (Geographic Information Retrieval and Analysis System) or CTG (Composite Theme Grid) format.  
+Time resolution:   
+Spacial resolution: The spatial resolution for all LULC files will depend on the format and feature type. Files in GIRAS format will have a minimum polygon area of 10 acres (4 hectares) with a minimum width of 660 feet (200 meters) for manmade features. Non-urban or natural features have a minimum polygon area of 40 acres (16 hectares) with a minimum width of 1320 feet (400 meters). Files in CTG format will have a resolution of 30 meters. 
+
+This is a collection of six image files (in TIFF format) that represent the same land use and land cover information contained in the shapefiles. However, the polygon areas are represented as 30-meter-resolution gridded data sets referenced to Albers Equal-Area map coordinates (conterminous United States) or UTM map coordinates (Alaska and Hawaii), NAD83.
+
+zip files include:  
+filename.tif TIFF file with internal GeoTIFF georeferencing tags
+filename.tfw ESRI world file (georeferencing) used by some ESRI and other software 
+filename.aux ESRI ".aux" file, used by ESRI ArcGIS software 
+filename.prj ESRI clear text-format projection file, used by ESRI Workstation ArcInfo software  
+
+Modifications: aggregation to basin  
+Projection: Universal Transverse Mercator (UTM) projection, and referenced to the North American Datum of 1983 (NAD83)
+
+## 13.0 Land Cover -- GAP Land Cover 3 National Vegetation Classification-Formation Land Use 
+The GAP national land cover data version 2 provides detailed information on the vegetation of the United States using consistent satellite base data and classification systems. This allows data users to make conservation or land use planning decisions for the entire range of a habitat type across administrative boundaries. 
+
+## 14.0 GCM Downscaled Climate Data -- CEC 4th Assessment
+What: Daily future projections and historical hindcasts downscaled from 32 global climate models in the CMIP5 archive by Scripps Institution Of Oceanography. The downscaling is done using LOCA statistical technique that uses past history to add improved fine-scale detail to global climate models. Details are described in Pierce et al., 2014.  
+
+Type (extension): .tiff (GEOTIFF rasters)
+
+Time resolution:  California agencies have selected 10 of the 32 LOCA downscaled climate models for performance in the California/Nevada region. For more details on this process see Perspectives and Guidance for Climate Change Analysis. Data for these 10 models with two future scenarios RCP 4.5 and RCP 8.5 over the period 2006–2100 (although some models stop in 2099) are available for download through Cal-Adapt. 
+
+Spacial resolution: 1/16º (approximately 6 km). The spatial extent available on Cal-Adapt covers entire state of California and Nevada and parts of Oregon, Mexico and Arizona. 
+
+# Final Touches 
+if needed 
+```{r final_touches}
+# # If you'd like you can put it all in a dataframe to be handed to machine learning functions
+# # mldf <- 
+# 
+# # clean up: check column types 
+# mldf <- na.omit(mldf)
+# str(mldf)
+# 
+# # output the dataframe to a .rds, use this format for larger data 
+# saveRDS(mldf, file="Intermediary Data/ml_input_data.rds" )
+# 
+# # now just read it back in
+# mldf <- readRDS("Intermediary Data/ml_input_data.rds")
+```
+
+
+
+
+
