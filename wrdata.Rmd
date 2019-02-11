@@ -1,5 +1,5 @@
 ---
-title: "Data Prep For ML"
+title: "Data Prep For Modeling"
 author: "Ellie White"
 date: "February 10th, 2019"
 output:
@@ -344,36 +344,38 @@ Spacial resolution: for all USGS gauges in CA
 Modifications: download flows seperately, need to map to CALVIN Rim Inflow locations  
 
 ```{r Predictor_Data_GaugesII}
-gage_locations <- shapefile("somedata/USGS/GAGESII/gagesII_9322_sept30_2011.shp")
-plot(gage_locations)
+# shapefiles are too big for Github, ask me for them if you need them email:white.elaheh@gmail.com
 
-gage_ca <- gage_locations[(gage_locations$STATE=="CA"), ]
-
-gage_boundary <- shapefile("somedata/USGS/GAGESII/boundaries/bas_ref_all.shp")
-
-# import all predictor data
-file_list <- list.files("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/")
-
-for (file in file_list){
-  # if the merged dataset doesn't exist, create it
-  if (!exists("gauge_pd")){
-    gauge_pd <- read.csv(paste0("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/",file), header=TRUE, sep=",")
-  }
-  # if the merged dataset does exist, append to it
-  if (exists("gauge_pd")){
-    temp_dataset <-read.csv(paste0("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/",file), header=TRUE, sep=",")
-    gauge_pd<-merge(gauge_pd, temp_dataset)
-    rm(temp_dataset)
-  }
-}
-
-# only keep the gauges that are located in CA 
-gauge_pd_ca <- gauge_pd[(gauge_pd$STATE=="CA"), ]
-
-# leading zeros in staid column were deleted! only the first staid had this problem! note: this coerces all the staid column to strings.
-gauge_pd_ca$STAID[1] <- "09423350"
-
-# map to other basins based on proximity if needed 
+# gage_locations <- shapefile("somedata/USGS/GAGESII/gagesII_9322_sept30_2011.shp")
+# plot(gage_locations)
+# 
+# gage_ca <- gage_locations[(gage_locations$STATE=="CA"), ]
+# 
+# gage_boundary <- shapefile("somedata/USGS/GAGESII/boundaries/bas_ref_all.shp")
+# 
+# # import all predictor data
+# file_list <- list.files("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/")
+# 
+# for (file in file_list){
+#   # if the merged dataset doesn't exist, create it
+#   if (!exists("gauge_pd")){
+#     gauge_pd <- read.csv(paste0("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/",file), header=TRUE, sep=",")
+#   }
+#   # if the merged dataset does exist, append to it
+#   if (exists("gauge_pd")){
+#     temp_dataset <-read.csv(paste0("somedata/USGS/GAGESII/basinchar/spreadsheets_csv/",file), header=TRUE, sep=",")
+#     gauge_pd<-merge(gauge_pd, temp_dataset)
+#     rm(temp_dataset)
+#   }
+# }
+# 
+# # only keep the gauges that are located in CA 
+# gauge_pd_ca <- gauge_pd[(gauge_pd$STATE=="CA"), ]
+# 
+# # leading zeros in staid column were deleted! only the first staid had this problem! note: this coerces all the staid column to strings.
+# gauge_pd_ca$STAID[1] <- "09423350"
+# 
+# # map to other basins based on proximity if needed 
 ```
 
 ### 8.1 Flow Data -- GAUGESII, USGS
@@ -395,22 +397,22 @@ Modifications: may need to aggregate to monthly
 ## edate = as.Date(Sys.Date(), format = "%Y-%m-%d"), for record up to now.
 library(waterData)
 
-# list of your guages of interest here
-staid_list <- gauge_pd_ca$STAID
-
-mflowlist <- list()
-for (staid in staid_list){
-  mflowtry <- try(importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"), silent=FALSE)
-    if ('try-error' %in% class(mflowtry)) next
-    else mflowlist[[staid]] <- mflowtry
-  print(staid)
-}
-
-# now coerce into a form you can use
-# mflowdf <- as.data.frame.list(mflowlist)
-
-# try lapply instead of a loop, it's r best practice
-# mflow <- lapply(staid_list, importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"))  
+# # list of your guages of interest here, had to comment these out becuase source data was too big for GitHub. 
+# staid_list <- gauge_pd_ca$STAID
+# 
+# mflowlist <- list()
+# for (staid in staid_list){
+#   mflowtry <- try(importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"), silent=FALSE)
+#     if ('try-error' %in% class(mflowtry)) next
+#     else mflowlist[[staid]] <- mflowtry
+#   print(staid)
+# }
+# 
+# # now coerce into a form you can use
+# # mflowdf <- as.data.frame.list(mflowlist)
+# 
+# # try lapply instead of a loop, it's r best practice
+# # mflow <- lapply(staid_list, importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"))  
 ```
 
 ## 9 Flow Data -- CALVIN
