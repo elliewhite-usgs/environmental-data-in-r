@@ -471,11 +471,8 @@ The GAP national land cover data version 2 provides detailed information on the 
 
 ## 14.0 GCM Downscaled Climate Data -- CEC 4th Assessment
 What: Daily future projections and historical hindcasts downscaled from 32 global climate models in the CMIP5 archive by Scripps Institution Of Oceanography. The downscaling is done using LOCA statistical technique that uses past history to add improved fine-scale detail to global climate models. Details are described in Pierce et al., 2014.  
-
 Type (extension): .tiff (GEOTIFF rasters)
-
-Time resolution:  California agencies have selected 10 of the 32 LOCA downscaled climate models for performance in the California/Nevada region. For more details on this process see Perspectives and Guidance for Climate Change Analysis. Data for these 10 models with two future scenarios RCP 4.5 and RCP 8.5 over the period 2006–2100 (although some models stop in 2099) are available for download through Cal-Adapt. 
-
+Time resolution:  California agencies have selected 10 of the 32 LOCA downscaled climate models for performance in the California/Nevada region. For more details on this process see Perspectives and Guidance for Climate Change Analysis. Data for these 10 models with two future scenarios RCP 4.5 and RCP 8.5 over the period 2006-2100 (although some models stop in 2099) are available for download through Cal-Adapt. 
 Spacial resolution: 1/16º (approximately 6 km). The spatial extent available on Cal-Adapt covers entire state of California and Nevada and parts of Oregon, Mexico and Arizona. 
 
 # Final Touches 
