@@ -1787,7 +1787,7 @@ for(i in seq_along(citethese)){
 <pre class="r"><code>library(raster)
 ## Loading required package: sp
 # Basin locations 
-sptdf &lt;- read.csv(&quot;somedata/CDEC_FNF/Outlet_Locations.csv&quot;, header=TRUE, stringsAsFactors=FALSE, fileEncoding=&quot;latin1&quot;)
+sptdf &lt;- read.csv(&quot;somedata/CDEC_FNF/outlet_locations.csv&quot;, header=TRUE, stringsAsFactors=FALSE, fileEncoding=&quot;latin1&quot;)
 
 # Change the dataframe to a SpatialPointsDataFrame
 coordinates(sptdf) &lt;- ~LONGITUDE + LATITUDE
