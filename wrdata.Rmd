@@ -1,5 +1,5 @@
 ---
-title: "Data Prep For Modeling"
+title: "How To Get Environmental Data in R"
 author: "Ellie White"
 date: "February 10th, 2019"
 output:
@@ -8,36 +8,36 @@ output:
 ---
 
 # Contents   
-Citations
-1.0 CDEC Full Natural Flow Basin Boundaries -- Developed from NHDPlusV2  
-2.0 Climate, Temperature and Precipitation (Dynamic) -- PRISM  
-3.0 Hypsometry or Elevation -- SRTM 90  
-4.0 Soil Properties -- POLARIS  
-5.0 Land Cover -- CALVEG  
-6.0 Geology -- NRCS  
-7.0 Unimpaired Flows -- CDEC  
-  7.1 Month, Season and Year  
-8.0 Basin Characteristic Data -- GaugesII, USGS   
-  8.1 Flow Data -- GAUGES II, USGS  
-9.0 Flow Data -- CALVIN  
-COMING LATER (hopefully)!!!  
-10.0 Soil Type -- NLCD  
-11.0 Watershed Boundaries -- calwater  
-12.0 Land Use Land Cover -- LULC 
-13.0 Land Cover -- GAP Land Cover 3 National Vegetation Classification-Formation Land Use  
-14.0 GCM Downscaled Climate Data -- CEC 4th Assessment  
-Final Touches  
+1.0 CDEC Full Natural Flow Basin Boundaries -- Developed from NHDPlusV2   
+2.0 Climate, Temperature and Precipitation (Dynamic) -- PRISM   
+3.0 Hypsometry or Elevation -- SRTM 90   
+4.0 Soil Properties -- POLARIS   
+5.0 Land Cover -- CALVEG   
+6.0 Geology -- NRCS   
+7.0 Unimpaired Flows -- CDEC   
+  7.1 Month, Season and Year   
+8.0 Basin Characteristic Data -- GaugesII, USGS    
+  8.1 Flow Data -- GAUGES II, USGS   
+9.0 GCM Downscaled Climate Data -- CEC 4th Assessment   
+
+COMING LATER (hopefully)!!!   
+10.0 Soil Type -- NLCD   
+11.0 Watershed Boundaries -- calwater   
+12.0 Land Use Land Cover -- LULC  
+13.0 Land Cover -- GAP Land Cover 3 National Vegetation Classification-Formation Land Use   
 
 # Useful Libraries  
-library(raster)         # for raster data manipulation  
-library(rgeos)          # for spatial data calculations  
-library(rgdal)          # for spatial data manipulation 
-library(dismo)          # for spatial data calculations
-library(geosphere)      # for spatial data calculations
-library(prism)          # for temp and precip web scraping  
+Use install.packages("[INSERT PACKAGE NAME]") to install the packages you don't have!  
+library(raster)         # for raster data manipulation   
+library(rgdal)          # for spatial data manipulation  
+library(prism)          # for temp and precip web scraping    
 library(sharpshootR)    # for CDEC web scraping  
-library(waterData)      # for USGS GUAGESII data
-library(reshape2)       # for reshaping data  
+library(waterData)      # for USGS GUAGESII data   
+library(RCurl)          # for CalAdapt data   
+library(foreach)        # for parallel computations   
+library(doParallel)     # for parallel computations  
+library(reshape2)       # for reshaping data   
+
 
 ```{r, include=FALSE}
 library(knitr)
@@ -51,21 +51,16 @@ opts_chunk$set(
 ```
 
 # Citations
-```{r citations, include=FALSE}
+```{r citations}
 # cite R 
 toBibtex(citation())
 
-# list the packages you have been using 
-search()
-
 # put the packages you want to cite below. We will be using these: 
-citethese <- c("sp", "raster", "rgdal", "prism", "sharpshootR", "waterData", "reshape2")
+citethese <- c("sp", "raster", "rgdal", "prism", "sharpshootR", "waterData", "RCurl", "foreach", "doParallel", "reshape2")
 for(i in seq_along(citethese)){
   x <- citation(citethese[i])
   print(toBibtex(x)) # in bibtex style
 }
-
-# use install.packages("YOUR PACKAGE NAME") to install the packages you don't have
 ```
 
 # Data Gathering
@@ -79,7 +74,7 @@ Notes: I developed these boundaries from looking at the flow direction and joini
 ```{r basin_data}
 library(raster)
 # Basin locations 
-sptdf <- read.csv("somedata/CDEC_FNF/Outlet_Locations.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1")
+sptdf <- read.csv("somedata/CDEC_FNF/outlet_locations.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1")
 
 # Change the dataframe to a SpatialPointsDataFrame
 coordinates(sptdf) <- ~LONGITUDE + LATITUDE
@@ -121,7 +116,7 @@ Modifications: you may need to aggregate by basin
 # # create a stack of prism files
 # prism_tmp <- prism_stack(ls_prism_data()[, 1])
 # 
-# # make a new folder under Some Data named "PRISM_PPT". This is where the precipitation data will get downoaded
+# # make a new folder under somedata named "PRISM_PPT". This is where the precipitation data will get downoaded
 # # set the path to download precipitation data
 # options(prism.path = "somedata/PRISM_PPT")
 # 
@@ -133,7 +128,7 @@ Modifications: you may need to aggregate by basin
 ```
 
 ```{r prism_aggregation}
-# # if you need to aggregate temp and precip rasters by basin boundaries, this may take a while if you have a lot of rasters and a lot of basin boundaries, so I have commented it out for now
+# # if you need to aggregate temp and precip rasters by basin boundaries, this may take a while if you have a lot of rasters and a lot of basin boundaries, so I have commented it out for now, you can use doParallel to parallelize this operation.
 # basins_tmp <- extract(prism_tmp, basins, fun=mean,  weights=FALSE, small=TRUE)
 # basins_ppt <- extract(prism_ppt, basins, fun=mean,  weights=FALSE, small=TRUE)
 # 
@@ -148,14 +143,6 @@ Modifications: you may need to aggregate by basin
 # # read in and comment the lines above so you don't accidentally run them again
 # basins@data$TMP <- read.csv("somedata/CDEC_FNF/basins_PRISM_TMP.csv")
 # basins@data$PPT <- read.csv("somedata/CDEC_FNF/basins_PRISM_PPT.csv")
-# 
-# # fix the column names as actual dates
-# strspl <- unlist(strsplit(colnames(basins@data$TMP), split="_"))
-# date_vector <- strspl[seq(5,length(strspl),6)]
-# date_formatted <- paste(substr(date_vector,1,4),"-",substr(date_vector,5,6),"-01",sep="")
-# 
-# # since the precip and temp data are for the same time series change the column names on both dataframes
-# colnames(basins@data$TMP) <- colnames(basins@data$PPT) <- date_formatted
 ```
 
 ## 3.0 Hypsometry or Elevation -- SRTM 90m
@@ -250,7 +237,7 @@ names(class_df) <- calveg@data@attributes[[1]]$COVERTYPE
 class_df$VEGETATED <- apply(class_df[, c(3:6, 8:9)], 1, sum)
 basins@data$VEGETATED <- class_df$VEGETATED
 
-write.csv(basins@data$VEGETATED, 'somedata/CDEC_FNF/basins_Vegetated.csv')
+write.csv(basins@data$VEGETATED, 'somedata/CDEC_FNF/basins_vegetated.csv')
 ```
 
 ## 6.0 Geology -- NRCS
@@ -278,45 +265,94 @@ Time resolution: monthly
 Spacial resolution: for all CDEC gauges in CA (consisting of some DWR, USBR, PGE, ... gages) 
 Modifications: none
 ```{r unimpaired_flow}
-# # read stations, coordinates are NAD-27, WGS-84 datum
-# cdec_fnf_sta <- read.csv("somedata/CDEC/Outlet_Locations.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1")
-# id_list_cdec <- cdec_fnf_sta$CDEC_ID
-# 
-# library(sharpshootR)
-# # sensor for "FLOW, FULL NATURAL"= 65, units in AF
-# 
-# mflowlist_cdec <- list()
-# for (id in id_list_cdec){
-#   mflowlist_cdec[[id]] <- CDECquery(id, sensor=65, interval="M", start="1982-01-01", end="2014-12-31")
-# }
-# 
-# # if you get an error in the command above uncomment this for loop and run this
-# # for (id in id_list_cdec){
-# #   mflowtry_cdec <- try(CDECquery(id, sensor=65, interval="M", start="1982-01-01", end="2014-12-31"), silent=FALSE)
-# #     if ('try-error' %in% class(mflowtry_cdec)) next
-# #     else mflowlist_cdec[[id]] <- mflowtry_cdec
-# # }
-# 
-# # coerce list into a data frame
-# mflowdf_cdec <- do.call(rbind.data.frame, mflowlist_cdec)
-# 
-# # the name is written in with a "___.#", get rid of the number
-# mflowdf_cdec$CDEC_ID <- substring(rownames(mflowdf_cdec), 1, 3)
-# 
-# # write to a csv file
-# write.csv(mflowdf_cdec, file="Data/CDEC/full_Natural_Flows.csv", row.names=FALSE)
+# read stations, coordinates are NAD-27, WGS-84 datum
+cdec_fnf_sta <- read.csv("somedata/CDEC_FNF/outlet_locations.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1")
+id_list_cdec <- cdec_fnf_sta$CDEC_ID
 
-# This tool may not be working anymore, as of 2/10/2019 CDEC has removed some of it's full natural flow stations offline and is no longer accessible, look under "somedata/CDEC_FNF/full_Natural_Flows.csv"" to find the data last accessed 12/12/2016
+# you can remove the discontinued basins if they are still there: c("SFR", "FTM", "BHN", "SJM") because their records sometimes do not overlap with the others, they are stations that CDEC retired
+id_list_cdec <- id_list_cdec[!id_list_cdec %in% c("BHN", "FTM", "SFR", "SJM")]
 
-cdec_fnf <- read.csv("somedata/CDEC_FNF/full_Natural_Flows.csv")
+library(sharpshootR)
+
+# I rewrote the sharpshootR CDECquery function on 03/27/2019  because it was broken, ignore the warnings
+CDECquery <- function(id, sensor, interval='D', start, end) {
+  # important: change the default behavior of data.frame
+  opt.original <- options(stringsAsFactors = FALSE)
+
+  # sanity-check:
+  if(missing(id) | missing(sensor) | missing(start) | missing(end))
+    stop('missing arguments', call.=FALSE)
+
+  # changes made in u
+  # construct the URL for the DWR website
+  u <- paste0(
+    'https://cdec.water.ca.gov/dynamicapp/req/CSVDataServlet?Stations=', id,
+    '&sensor_num=', sensor,
+    '&dur_code=', interval,
+    '&start_date=', start,
+    '&end_date=', end)
+    #'&data_wish=Download CSV Data Now')
+
+  # encode as needed
+  u <- URLencode(u)
+
+  # init temp file and download
+  tf <- tempfile()
+  suppressWarnings(download.file(url=u, destfile=tf, quiet=TRUE))
+
+  # changes made in colClasses
+  # try to parse CSV
+  d <- try(read.csv(file=tf, header=TRUE, quote="'", na.strings='---', stringsAsFactors=FALSE, colClasses=c('character', 'character', 'numeric', 'character', 'character', 'character', 'character', 'character', 'character')),  silent=TRUE)
+
+  # catch errors
+  if(class(d) == 'try-error') {
+    ref.url <- paste0('invalid URL; see ','https://cdec.water.ca.gov/dynamicapp/req/CSVDataServlet?Stations=', id)
+    stop(ref.url, call.=FALSE)
+  }
+
+  # no data available
+  if(nrow(d) == 0)
+    stop('query returned no data', call.=FALSE)
+
+  # changes made in dataframe and formatting
+  # convert date/time to R-friendly format
+  d$datetime <- as.POSIXct(d$DATE.TIME, format="%Y%m%d %H%M")
+  d$datetime <- as.Date(substr(d$datetime, 1, 10), format="%Y-%m-%d")
+
+  # strip-out extras and format the columns in datetime, value, CDEC_ID
+  c <- data.frame(cbind.data.frame(DATE=d$datetime, CDEC_ID=d$STATION_ID, SENSOR=d$SENSOR_NUMBER, FLOW=as.numeric(d$VALUE)))
+
+  # return the result in a more useful order
+  return(c)
+}
+
+mflowlist_cdec <- list()
+for (id in id_list_cdec){
+  # sensor for "FLOW, FULL NATURAL"= 65, units in AF
+  newdata <- CDECquery(id, sensor=65, interval="M", start="1900-10-01", end="2018-12-01")
+  # for some reason the website is returning both sensor 65 and 66. So, we will have to subset the dataframe before returning
+  newdata <- newdata[newdata$SENSOR==65,]
+  mflowlist_cdec[[id]] <- newdata
+}
+
+# now coerce list into a data frame
+mflowdf_cdec <- do.call("rbind", mflowlist_cdec)
+
+# get rid of the sensor number info, we know it's 65
+mflowdf_cdec <- mflowdf_cdec[ ,c("DATE", "CDEC_ID", "FLOW")]
+
+# write to a csv file
+write.csv(mflowdf_cdec, file="somedata/CDEC_FNF/cdec_fnf_autodl.csv", row.names=FALSE)
+
+# read back in and comment the lines above
+cdec_fnf <- read.csv("somedata/CDEC_FNF/cdec_fnf_autodl.csv")
 cdec_fnf <- na.omit(cdec_fnf)
-cdec_fnf <- cdec_fnf[,-c(2:3)]
 ```
 
 ### 7.1 Month & Season & Year
 ```{r month}
-cdec_fnf$MONTH <- month.abb[as.integer(substring(cdec_fnf$datetime, 6, 7))]
-cdec_fnf$MONTH_ORDINAL <- abs(6-as.integer(substring(cdec_fnf$datetime, 6, 7))) 
+cdec_fnf$MONTH <- month.abb[as.integer(substring(cdec_fnf$DATE, 6, 7))]
+cdec_fnf$MONTH_ORDINAL <- abs(6-as.integer(substring(cdec_fnf$DATE, 6, 7))) 
 
 # make a season finding function
 getseason <- function(dates) {
@@ -332,11 +368,11 @@ getseason <- function(dates) {
       ifelse (d >= SE & d < SS, "Spring",
         ifelse (d >= SS & d < FE, "Summer", "Fall")))
 }
-cdec_fnf$SEASON <- as.factor(getseason(cdec_fnf$datetime))
-cdec_fnf$YEAR <- as.numeric(substring(cdec_fnf$datetime, 1, 4))
+cdec_fnf$SEASON <- as.factor(getseason(cdec_fnf$DATE))
+cdec_fnf$YEAR <- as.numeric(substring(cdec_fnf$DATE, 1, 4))
 ```
 
-## 8 Basin Characteristic Data -- GaugesII, USGS 
+## 8.0 Basin Characteristic Data -- GaugesII, USGS 
 What: gauges II data for USGS gauges  
 Type (extension): excel files  
 Time resolution: annual  
@@ -415,23 +451,171 @@ library(waterData)
 # # mflow <- lapply(staid_list, importDVs(staid, code = "00060", stat = "00003", sdate = "2009-01-01", edate = "2009-05-01"))  
 ```
 
-## 9 Flow Data -- CALVIN
-What: Monthly Streamflow Simulation Results from CALSIMII and other methods
-Type (extension): .csv  
-Time resolution: monthly  
-Spacial resolution: for 46 Rim Inflow locations  
-Modifications: none
+## 9.0 GCM Downscaled Climate Data -- CEC 4th Assessment
+What: Monthly and annual future projections and historical hindcasts downscaled from 32 global climate models in the CMIP5 archive by Scripps Institution Of Oceanography. The downscaling is done using LOCA statistical technique that uses past history to add improved fine-scale detail to global climate models. Details are described in Pierce et al., 2014.  
+Type (extension): .tiff (GEOTIFF rasters)
+Time resolution:  California agencies have selected 10 of the 32 LOCA downscaled climate models for performance in the California/Nevada region. For more details on this process see Perspectives and Guidance for Climate Change Analysis. Data for these 10 models with two future scenarios RCP 4.5 and RCP 8.5 over the period 2006-2100 (although some models stop in 2099) are available for download through Cal-Adapt. 
+Spacial resolution: 1/16º (approximately 6 km). The spatial extent available on Cal-Adapt covers entire state of California and Nevada and parts of Oregon, Mexico and Arizona. 
 
-```{r CALVIN_Flow_Data}
-# read in rim inflows as it is: wide format
-ri_wide <- read.csv("somedata/CALVIN/Index_Basins_Flows.csv", header=TRUE, stringsAsFactors=FALSE, fileEncoding="latin1") 
+follow the links
+https://api.cal-adapt.org/api/
+https://api.cal-adapt.org/api/datasets/
+http://albers.cnr.berkeley.edu/data/scripps/livneh_vic-output/
+reference: "Pierce et al. (2018). Climate, drought, and sea level rise scenarios for California's fourth climate change assessment. California’s Fourth Climate Change Assessment, California Energy Commission. Publication Number: CNRA-CEC-2018-006."
+"url": "https://www.energy.ca.gov/sites/default/files/2019-07/Projections_CCCA4-CEC-2018-006.pdf"
+```{r cec_monthly}
+# get monthly data downloaded
+library(RCurl)
 
-# change to long format
-library(reshape2)
-riminflows <- melt(ri_wide, id.vars = c("RIVER_LOCATION", "INDEX_BASIN_NAME", "HOBBES_NAME", "LATITUDE", "LONGITUDE") , measure.vars = 6:989, variable.name = "DATE", value.name = "FLOW") 
-head(riminflows)
+# ccmodes, these four are recommended for California, and have empty folders under somedata
+ccmods <- c("CanESM2", "CNRMCM5", "HadGEM2ES", "MIROC5")
+ccscenario <- c("rcp45", "rcp85")
+ccscenario <- c("rcp45", "rcp85")
+varofinterest <- c("rainfall", "Tair", "runoff")
+time <- 2006:2099
+month <- c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")
 
-# dates will need cleaning up here
+# this data was too big for GitHub, uncomment and download
+# for(c in seq_along(ccmods)){
+#   for(v in seq_along(varofinterest)){
+#     for(t in seq_along(time)){
+#       for(m in seq_along(month)){
+#         for(s in seq_along(ccscenario)){
+#           if(ccscenario[s]=="rcp85"){
+#             if(varofinterest[v]=="Tair"){
+#               if(ccmods[c]== "CanESM2"){
+#               numfolder <- 30769 # found these folder numbers on caladapt
+#               } else if (ccmods[c]== "CNRM-CM5"){
+#               numfolder <- 30853
+#               } else if (ccmods[c]== "GFDL-CM3"){
+#               numfolder <- 30874
+#               } else if (ccmods[c]== "HadGEM2-ES"){
+#               numfolder <- 30916
+#               } else if (ccmods[c]== "MIROC5"){
+#               numfolder <- 30937
+#               } else print("Enter a valid model!")
+#             } else if (varofinterest[v]=="rainfall"){
+#               if (ccmods[c]== "CanESM2"){
+#               numfolder <- 30754
+#               } else if (ccmods[c]== "CNRM-CM5"){
+#               numfolder <- 30838
+#               } else if (ccmods[c]== "GFDL-CM3"){
+#               numfolder <- 30859
+#               } else if (ccmods[c]== "HadGEM2-ES"){
+#               numfolder <- 30901
+#               } else if (ccmods[c]== "MIROC5"){
+#               numfolder <- 30922
+#               } else print("Enter a valid model!")
+#             } else if (varofinterest[v]=="runoff"){
+#               if (ccmods[c]== "CanESM2"){
+#               numfolder <- 30757
+#               } else if (ccmods[c]== "CNRM-CM5"){
+#               numfolder <- 30841
+#               } else if (ccmods[c]== "GFDL-CM3"){
+#               numfolder <- 30862
+#               } else if (ccmods[c]== "HadGEM2-ES"){
+#               numfolder <- 30904
+#               } else if (ccmods[c]== "MIROC5"){
+#               numfolder <- 30925
+#               } else print("Enter a valid model!")
+#             } else print("variables not defined!")
+#           } else if(ccscenario[s]=="rcp45"){
+#               if(varofinterest[v]=="Tair"){
+#                 if(ccmods[c]== "CanESM2"){
+#                 numfolder <- 30768
+#                 } else if (ccmods[c]== "CNRM-CM5"){
+#                 numfolder <- 30852
+#                 } else if (ccmods[c]== "GFDL-CM3"){
+#                 numfolder <- 30873
+#                 } else if (ccmods[c]== "HadGEM2-ES"){
+#                 numfolder <- 30915
+#                 } else if (ccmods[c]== "MIROC5"){
+#                 numfolder <- 30936
+#                 } else print("Enter a valid model!")
+#               } else if (varofinterest[v]=="rainfall"){
+#                 if (ccmods[c]== "CanESM2"){
+#                 numfolder <- 30753
+#                 } else if (ccmods[c]== "CNRM-CM5"){
+#                 numfolder <- 30837
+#                 } else if (ccmods[c]== "GFDL-CM3"){
+#                 numfolder <- 30858
+#                 } else if (ccmods[c]== "HadGEM2-ES"){
+#                 numfolder <- 30900
+#                 } else if (ccmods[c]== "MIROC5"){
+#                 numfolder <- 30921
+#                 } else print("Enter a valid model!")
+#               } else if (varofinterest[v]=="runoff"){
+#                 if (ccmods[c]== "CanESM2"){
+#                 numfolder <- 30756
+#                 } else if (ccmods[c]== "CNRM-CM5"){
+#                 numfolder <- 30840
+#                 } else if (ccmods[c]== "GFDL-CM3"){
+#                 numfolder <- 30861
+#                 } else if (ccmods[c]== "HadGEM2-ES"){
+#                 numfolder <- 30903
+#                 } else if (ccmods[c]== "MIROC5"){
+#                 numfolder <- 30924
+#                 } else print("Enter a valid model!")
+#               } else print("variables not defined!")
+#             } else print("rcp not defined!")
+#         baseurl <- "https://api.cal-adapt.org/media/img/"
+#         fullurl <- paste0(baseurl, numfolder, "/", varofinterest[v], "_month_", ccmods[c], "_", ccscenario[s], "_", time[t], "-", month[m], ".v0.CA_NV.tif")
+#         download.file(url=fullurl, destfile=paste0("somedata/CALADAPT/projected_data_monthly/", ccmods[[c]], "/", ccscenario[[s]], "/", varofinterest[[v]], "/", varofinterest[[v]], "_month_", ccmods[[c]], "_", ccscenario[[s]], "_", time[[t]], "-", month[[m]], ".v0.CA_NV.tif"), method="curl")
+#         }
+#       }
+#     }
+#   }
+# }
+```
+
+```{r cc_precip_monthly}
+# now bring the data into r and make a raster stack
+stackf_monthly <- function(ccmods, varofinterest, ccscenario="rcp85"){
+  filelists <- list.files(paste0("somedata/CALADAPT/projected_data_monthly/", ccmods, "/", ccscenario, "/", varofinterest, "/"), pattern = "*.tif$")
+  stackcc <- raster::stack(paste0("somedata/CALADAPT/projected_data_monthly/", ccmods, "/", ccscenario, "/", varofinterest, "/", filelists))
+}
+  
+# pmstack_CanESM2_85 <- stackf_monthly(ccmods[1], "rainfall", ccscenario="rcp85")
+# pmstack_CNRMCM5_85 <- stackf_monthly(ccmods[2], "rainfall", ccscenario="rcp85")
+# pmstack_HadGEM2ES_85 <- stackf_monthly(ccmods[3], "rainfall", ccscenario="rcp85")
+# pmstack_MIROC5_85 <- stackf_monthly(ccmods[4], "rainfall", ccscenario="rcp85")
+# 
+# pmstack_CanESM2_45 <- stackf_monthly(ccmods[1], "rainfall", ccscenario="rcp45")
+# pmstack_CNRMCM5_45 <- stackf_monthly(ccmods[2], "rainfall", ccscenario="rcp45")
+# pmstack_HadGEM2ES_45 <- stackf_monthly(ccmods[3], "rainfall", ccscenario="rcp45")
+# pmstack_MIROC5_45 <- stackf_monthly(ccmods[4], "rainfall", ccscenario="rcp45")
+```
+
+```{r cc_aggregate}
+# if you want to find the total precipitation for a basin, you have to aggregate the raster to the basin boundary, but rememebr to have the raster and the polygons in the same projection
+
+# # first bring in an example raster
+# prast2030 <- 
+# basins_proj <- spTransform(basins, crs(prast2030))
+
+# # aggregate temp and precip rasters by basin boundaries, old method, takes too long
+# basins_tmp <- extract(pmstack_CanESM2_85, basins_proj, fun=mean,  weights=FALSE, small=TRUE)
+# basins_ppt <- extract(pmstack_CanESM2_85, basins_proj, fun=mean,  weights=FALSE, small=TRUE)
+ 
+# let's try cutting down the processing time with doParallel
+library(foreach)
+library(doParallel)
+
+cl <- makeCluster(4)
+registerDoParallel(cl)
+aggtobasinsf <- function(stack, boundaries, aggfun=mean){
+  boundaries_stack <- foreach(i=1:nrow(boundaries@data), .combine=rbind) %dopar% {
+  library(raster)
+  extract(stack, boundaries[i,], fun=aggfun,  weights=FALSE, small=TRUE)
+  }
+  stopImplicitCluster()
+  boundaries_stack
+}
+
+# basins_ppt_CanESM2_85 <- aggtobasinsf(pmstack_CanESM2_85, basins_proj, mean)
+# basins_ppt_CNRMCM5_85 <- aggtobasinsf(pmstack_CNRMCM5_85, basins_proj, mean)
+# basins_ppt_HadGEM2ES_85 <- aggtobasinsf(pmstack_HadGEM2ES_85, basins_proj, mean)
+# basins_ppt_MIROC5_85 <- aggtobasinsf(pmstack_MIROC5_85, basins_proj, mean)
 ```
 
 # COMING LATER (hopefully)!!! 
@@ -470,31 +654,3 @@ Projection: Universal Transverse Mercator (UTM) projection, and referenced to th
 
 ## 13.0 Land Cover -- GAP Land Cover 3 National Vegetation Classification-Formation Land Use 
 The GAP national land cover data version 2 provides detailed information on the vegetation of the United States using consistent satellite base data and classification systems. This allows data users to make conservation or land use planning decisions for the entire range of a habitat type across administrative boundaries. 
-
-## 14.0 GCM Downscaled Climate Data -- CEC 4th Assessment
-What: Daily future projections and historical hindcasts downscaled from 32 global climate models in the CMIP5 archive by Scripps Institution Of Oceanography. The downscaling is done using LOCA statistical technique that uses past history to add improved fine-scale detail to global climate models. Details are described in Pierce et al., 2014.  
-Type (extension): .tiff (GEOTIFF rasters)
-Time resolution:  California agencies have selected 10 of the 32 LOCA downscaled climate models for performance in the California/Nevada region. For more details on this process see Perspectives and Guidance for Climate Change Analysis. Data for these 10 models with two future scenarios RCP 4.5 and RCP 8.5 over the period 2006-2100 (although some models stop in 2099) are available for download through Cal-Adapt. 
-Spacial resolution: 1/16º (approximately 6 km). The spatial extent available on Cal-Adapt covers entire state of California and Nevada and parts of Oregon, Mexico and Arizona. 
-
-# Final Touches 
-if needed 
-```{r final_touches}
-# # If you'd like you can put it all in a dataframe to be handed to machine learning functions
-# # mldf <- 
-# 
-# # clean up: check column types 
-# mldf <- na.omit(mldf)
-# str(mldf)
-# 
-# # output the dataframe to a .rds, use this format for larger data 
-# saveRDS(mldf, file="Intermediary Data/ml_input_data.rds" )
-# 
-# # now just read it back in
-# mldf <- readRDS("Intermediary Data/ml_input_data.rds")
-```
-
-
-
-
-
